@@ -17,8 +17,6 @@ limitations under the License.
 package options
 
 import (
-	"path"
-
 	"github.com/spf13/pflag"
 
 	"k8s.io/client-go/dynamic"
@@ -71,7 +69,5 @@ func (o *Syncer) NewVirtualWorkspaces(
 		return nil, err
 	}
 
-	return []rootapiserver.NamedVirtualWorkspace{
-		{Name: builder.SyncerVirtualWorkspaceName, VirtualWorkspace: builder.BuildVirtualWorkspace(path.Join(rootPathPrefix, builder.SyncerVirtualWorkspaceName), kubeClusterClient, dynamicClusterClient, kcpClusterClient, wildcardKcpInformers)},
-	}, nil
+	return builder.BuildVirtualWorkspace(rootPathPrefix, kubeClusterClient, dynamicClusterClient, kcpClusterClient, wildcardKcpInformers), nil
 }

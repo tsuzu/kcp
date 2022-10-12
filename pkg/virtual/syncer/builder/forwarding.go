@@ -32,8 +32,10 @@ import (
 	registry "github.com/kcp-dev/kcp/pkg/virtual/framework/forwardingregistry"
 )
 
-// NewStorageBuilder returns a forwarding storage build function, with an optional storage wrapper e.g. to add label based filtering.
-func NewStorageBuilder(ctx context.Context, clusterClient dynamic.ClusterInterface, apiExportIdentityHash string, wrapper registry.StorageWrapper) apiserver.RestProviderFunc {
+type StorageBuilderProvider func(ctx context.Context, clusterClient dynamic.ClusterInterface, apiExportIdentityHash string, wrapper registry.StorageWrapper) apiserver.RestProviderFunc
+
+// NewStorageBuilderSyncer returns a forwarding storage build function, with an optional storage wrapper e.g. to add label based filtering.
+func NewStorageBuilderSyncer(ctx context.Context, clusterClient dynamic.ClusterInterface, apiExportIdentityHash string, wrapper registry.StorageWrapper) apiserver.RestProviderFunc {
 	return func(resource schema.GroupVersionResource, kind schema.GroupVersionKind, listKind schema.GroupVersionKind, typer runtime.ObjectTyper, tableConvertor rest.TableConvertor, namespaceScoped bool, schemaValidator *validate.SchemaValidator, subresourcesSchemaValidator map[string]*validate.SchemaValidator, structuralSchema *structuralschema.Structural) (mainStorage rest.Storage, subresourceStorages map[string]rest.Storage) {
 		statusSchemaValidate, statusEnabled := subresourcesSchemaValidator["status"]
 
@@ -122,6 +124,108 @@ func NewStorageBuilder(ctx context.Context, clusterClient dynamic.ClusterInterfa
 			ListerFunc:  storage.ListerFunc,
 			UpdaterFunc: storage.UpdaterFunc,
 			WatcherFunc: storage.WatcherFunc,
+
+			TableConvertorFunc:      storage.TableConvertorFunc,
+			CategoriesProviderFunc:  storage.CategoriesProviderFunc,
+			ResetFieldsStrategyFunc: storage.ResetFieldsStrategyFunc,
+		}, subresourceStorages
+	}
+}
+
+// NewStorageBuilderUpSyncer returns a forwarding storage build function, with an optional storage wrapper e.g. to add label based filtering.
+func NewStorageBuilderUpSyncer(ctx context.Context, clusterClient dynamic.ClusterInterface, apiExportIdentityHash string, wrapper registry.StorageWrapper) apiserver.RestProviderFunc {
+	return func(resource schema.GroupVersionResource, kind schema.GroupVersionKind, listKind schema.GroupVersionKind, typer runtime.ObjectTyper, tableConvertor rest.TableConvertor, namespaceScoped bool, schemaValidator *validate.SchemaValidator, subresourcesSchemaValidator map[string]*validate.SchemaValidator, structuralSchema *structuralschema.Structural) (mainStorage rest.Storage, subresourceStorages map[string]rest.Storage) {
+		statusSchemaValidate, _ := subresourcesSchemaValidator["status"]
+
+		var statusSpec *apiextensions.CustomResourceSubresourceStatus
+		// if statusEnabled {
+		// 	statusSpec = &apiextensions.CustomResourceSubresourceStatus{}
+		// }
+
+		var scaleSpec *apiextensions.CustomResourceSubresourceScale
+		// TODO(sttts): implement scale subresource
+
+		strategy := customresource.NewStrategy(
+			typer,
+			namespaceScoped,
+			kind,
+			schemaValidator,
+			statusSchemaValidate,
+			map[string]*structuralschema.Structural{resource.Version: structuralSchema},
+			statusSpec,
+			scaleSpec,
+		)
+
+		storage, _ := registry.NewStorage(
+			ctx,
+			resource,
+			apiExportIdentityHash,
+			kind,
+			listKind,
+			strategy,
+			nil,
+			tableConvertor,
+			nil,
+			clusterClient,
+			nil,
+			wrapper,
+		)
+
+		// we want to expose some but not all the allowed endpoints, so filter by exposing just the funcs we need
+		subresourceStorages = make(map[string]rest.Storage)
+		// if statusEnabled {
+		// 	subresourceStorages["status"] = &struct {
+		// 		registry.FactoryFunc
+		// 		registry.DestroyerFunc
+
+		// 		registry.GetterFunc
+		// 		registry.UpdaterFunc
+		// 		// patch is implicit as we have get + update
+
+		// 		registry.TableConvertorFunc
+		// 		registry.CategoriesProviderFunc
+		// 		registry.ResetFieldsStrategyFunc
+		// 	}{
+		// 		FactoryFunc:   statusStorage.FactoryFunc,
+		// 		DestroyerFunc: statusStorage.DestroyerFunc,
+
+		// 		GetterFunc:  statusStorage.GetterFunc,
+		// 		UpdaterFunc: statusStorage.UpdaterFunc,
+
+		// 		TableConvertorFunc:      statusStorage.TableConvertorFunc,
+		// 		CategoriesProviderFunc:  statusStorage.CategoriesProviderFunc,
+		// 		ResetFieldsStrategyFunc: statusStorage.ResetFieldsStrategyFunc,
+		// 	}
+		// }
+
+		// TODO(sttts): add scale subresource
+
+		return &struct {
+			registry.FactoryFunc
+			registry.ListFactoryFunc
+			registry.DestroyerFunc
+
+			registry.GetterFunc
+			registry.ListerFunc
+			registry.CreaterFunc
+			registry.UpdaterFunc
+			registry.WatcherFunc
+			registry.GracefulDeleterFunc
+
+			registry.TableConvertorFunc
+			registry.CategoriesProviderFunc
+			registry.ResetFieldsStrategyFunc
+		}{
+			FactoryFunc:     storage.FactoryFunc,
+			ListFactoryFunc: storage.ListFactoryFunc,
+			DestroyerFunc:   storage.DestroyerFunc,
+
+			GetterFunc:          storage.GetterFunc,
+			ListerFunc:          storage.ListerFunc,
+			CreaterFunc:         storage.CreaterFunc,
+			UpdaterFunc:         storage.UpdaterFunc,
+			WatcherFunc:         storage.WatcherFunc,
+			GracefulDeleterFunc: storage.GracefulDeleterFunc,
 
 			TableConvertorFunc:      storage.TableConvertorFunc,
 			CategoriesProviderFunc:  storage.CategoriesProviderFunc,
